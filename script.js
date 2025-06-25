@@ -1,14 +1,25 @@
 class UrnaEletronica {
     constructor() {
-        this.quantidadeVotantes = 0;
-        this.votanteAtual = 0;
         this.screen = document.getElementById('screen');
+        this.eleitoresQueVotaram = new Set(); // Para controlar quem já votou
         
         // Contadores de votos
         this.votos = {
-            representante: { pedro: 0, joao: 0, rogerio: 0 },
-            monitor: { pedro: 0, gabriel: 0, marcelo: 0 },
-            orador: { matheus: 0, daniel: 0, felipe: 0 }
+            representante: { 
+                candidatos: { pedro: 0, joao: 0, rogerio: 0 },
+                branco: 0,
+                nulo: 0
+            },
+            monitor: { 
+                candidatos: { pedro: 0, gabriel: 0, marcelo: 0 },
+                branco: 0,
+                nulo: 0
+            },
+            orador: { 
+                candidatos: { matheus: 0, daniel: 0, felipe: 0 },
+                branco: 0,
+                nulo: 0
+            }
         };
 
         // Candidatos por posição
@@ -34,43 +45,67 @@ class UrnaEletronica {
         this.posicaoAtual = 'representante';
         this.posicoes = ['representante', 'monitor', 'orador'];
         this.indicePosicao = 0;
+        this.eleitorAtual = '';
 
         this.init();
     }
 
     init() {
-        this.showConfigScreen();
+        this.showLoginScreen();
     }
 
-    showConfigScreen() {
+    showLoginScreen() {
         this.screen.innerHTML = `
-            <div class="config-screen">
-                <h2>⚙️ Configuração da Votação</h2>
+            <div class="login-screen">
+                <h2>🔐 Identificação do Eleitor</h2>
                 <div class="input-group">
-                    <label for="quantidadeVotantes">Quantas pessoas irão votar?</label>
-                    <input type="number" id="quantidadeVotantes" min="1" max="100" value="1">
+                    <label for="matricula">Digite sua matrícula:</label>
+                    <input type="text" id="matricula" placeholder="Ex: 12345" maxlength="10">
                 </div>
                 <div class="controls">
-                    <button class="btn btn-primary" onclick="urna.iniciarVotacao()">
-                        Iniciar Votação
+                    <button class="btn btn-primary" onclick="urna.validarEleitor()">
+                        Entrar
+                    </button>
+                    <button class="btn btn-warning" onclick="urna.showResultsAdmin()">
+                        Ver Resultados
                     </button>
                 </div>
             </div>
         `;
     }
 
-    iniciarVotacao() {
-        const input = document.getElementById('quantidadeVotantes');
-        this.quantidadeVotantes = parseInt(input.value);
+    validarEleitor() {
+        const matricula = document.getElementById('matricula').value.trim();
         
-        if (this.quantidadeVotantes < 1) {
-            alert('Por favor, informe um número válido de votantes.');
+        if (!matricula) {
+            this.showAlert('Por favor, digite uma matrícula válida.', 'error');
             return;
         }
 
-        this.votanteAtual = 1;
+        if (this.eleitoresQueVotaram.has(matricula)) {
+            this.showAlert('Esta matrícula já votou! Cada eleitor pode votar apenas uma vez.', 'error');
+            return;
+        }
+
+        this.eleitorAtual = matricula;
         this.resetVotosAtuais();
         this.showVotingScreen();
+    }
+
+    showAlert(message, type = 'error') {
+        const alertClass = type === 'success' ? 'alert success' : 'alert';
+        const currentContent = this.screen.innerHTML;
+        this.screen.innerHTML = `
+            <div class="${alertClass}">${message}</div>
+            ${currentContent}
+        `;
+        
+        setTimeout(() => {
+            const alert = this.screen.querySelector('.alert');
+            if (alert) {
+                alert.remove();
+            }
+        }, 3000);
     }
 
     resetVotosAtuais() {
@@ -85,7 +120,7 @@ class UrnaEletronica {
         this.screen.innerHTML = `
             <div class="voting-screen">
                 <div class="voter-info">
-                    👤 Votante ${this.votanteAtual} de ${this.quantidadeVotantes}
+                    👤 Eleitor: ${this.eleitorAtual} | Cargo ${this.indicePosicao + 1} de ${this.posicoes.length}
                 </div>
                 
                 <div class="position-voting">
@@ -93,15 +128,25 @@ class UrnaEletronica {
                     <div class="candidates">
                         ${this.renderCandidates()}
                     </div>
+                    
+                    <div class="special-votes">
+                        <div class="special-vote ${this.votosAtuais[this.posicaoAtual] === 'branco' ? 'selected' : ''}" 
+                             onclick="urna.votar('${this.posicaoAtual}', 'branco')">
+                            VOTO EM BRANCO
+                        </div>
+                        <div class="special-vote ${this.votosAtuais[this.posicaoAtual] === 'nulo' ? 'selected' : ''}" 
+                             onclick="urna.votar('${this.posicaoAtual}', 'nulo')">
+                            VOTO NULO
+                        </div>
+                    </div>
                 </div>
-
-                ${this.votosAtuais[this.posicaoAtual] ? this.renderVoteSummary() : ''}
 
                 <div class="controls">
                     ${this.votosAtuais[this.posicaoAtual] ? 
                         `<button class="btn btn-success" onclick="urna.proximaPosicao()">
-                            ${this.indicePosicao < this.posicoes.length - 1 ? 'Próximo Cargo' : 'Confirmar Votos'}
-                        </button>` : ''}
+                            ${this.indicePosicao < this.posicoes.length - 1 ? 'Próximo Cargo' : 'Revisar Votos'}
+                        </button>` : 
+                        '<p style="color: #bdc3c7; text-align: center;">Selecione uma opção para continuar</p>'}
                 </div>
             </div>
         `;
@@ -117,23 +162,8 @@ class UrnaEletronica {
         `).join('');
     }
 
-    renderVoteSummary() {
-        const candidatoEscolhido = this.candidatos[this.posicaoAtual]
-            .find(c => c.numero === this.votosAtuais[this.posicaoAtual]);
-        
-        return `
-            <div class="vote-summary">
-                <h3>✅ Voto Confirmado</h3>
-                <div class="vote-item">
-                    <span>${this.getPosicaoNome(this.posicaoAtual)}:</span>
-                    <span>${candidatoEscolhido.nome} (${candidatoEscolhido.numero})</span>
-                </div>
-            </div>
-        `;
-    }
-
-    votar(posicao, numero) {
-        this.votosAtuais[posicao] = numero;
+    votar(posicao, voto) {
+        this.votosAtuais[posicao] = voto;
         this.showVotingScreen();
     }
 
@@ -144,49 +174,145 @@ class UrnaEletronica {
             this.posicaoAtual = this.posicoes[this.indicePosicao];
             this.showVotingScreen();
         } else {
-            this.confirmarVotos();
+            this.showConfirmationScreen();
         }
+    }
+
+    showConfirmationScreen() {
+        this.screen.innerHTML = `
+            <div class="confirmation-screen">
+                <h2>📋 CONFIRMAÇÃO DOS VOTOS</h2>
+                <p style="color: #bdc3c7; text-align: center; margin-bottom: 20px;">
+                    Eleitor: <strong>${this.eleitorAtual}</strong>
+                </p>
+                
+                <div class="vote-review">
+                    <h3>Revise seus votos:</h3>
+                    ${this.renderVoteReview()}
+                </div>
+                
+                <div class="controls">
+                    <button class="btn btn-danger" onclick="urna.voltarVotacao()">
+                        ← Voltar e Alterar
+                    </button>
+                    <button class="btn btn-success" onclick="urna.confirmarVotos()">
+                        ✓ Confirmar Votos
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    renderVoteReview() {
+        return this.posicoes.map(posicao => {
+            const voto = this.votosAtuais[posicao];
+            const posicaoNome = this.getPosicaoNome(posicao);
+            let votoTexto = '';
+
+            if (voto === 'branco') {
+                votoTexto = 'VOTO EM BRANCO';
+            } else if (voto === 'nulo') {
+                votoTexto = 'VOTO NULO';
+            } else {
+                const candidato = this.candidatos[posicao].find(c => c.numero === voto);
+                votoTexto = candidato ? `${candidato.nome} (${candidato.numero})` : 'Não selecionado';
+            }
+
+            return `
+                <div class="vote-item">
+                    <span><strong>${posicaoNome}:</strong></span>
+                    <span>${votoTexto}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    voltarVotacao() {
+        this.indicePosicao = 0;
+        this.posicaoAtual = this.posicoes[0];
+        this.showVotingScreen();
     }
 
     confirmarVotos() {
-        // Contabilizar votos
-        this.contabilizarVoto('representante', this.votosAtuais.representante);
-        this.contabilizarVoto('monitor', this.votosAtuais.monitor);
-        this.contabilizarVoto('orador', this.votosAtuais.orador);
-
-        this.votanteAtual++;
+        // Registrar que este eleitor já votou
+        this.eleitoresQueVotaram.add(this.eleitorAtual);
         
-        if (this.votanteAtual <= this.quantidadeVotantes) {
-            this.resetVotosAtuais();
-            this.showVotingScreen();
+        // Contabilizar votos
+        this.posicoes.forEach(posicao => {
+            this.contabilizarVoto(posicao, this.votosAtuais[posicao]);
+        });
+
+        this.showSuccessScreen();
+    }
+
+    contabilizarVoto(posicao, voto) {
+        if (voto === 'branco') {
+            this.votos[posicao].branco++;
+        } else if (voto === 'nulo') {
+            this.votos[posicao].nulo++;
         } else {
-            this.showResults();
+            const candidato = this.candidatos[posicao].find(c => c.numero === voto);
+            if (candidato) {
+                const nomeKey = candidato.nome.toLowerCase();
+                this.votos[posicao].candidatos[nomeKey]++;
+            }
         }
     }
 
-    contabilizarVoto(posicao, numeroVoto) {
-        const candidatos = this.candidatos[posicao];
-        const candidato = candidatos.find(c => c.numero === numeroVoto);
-        
-        if (candidato) {
-            const nomeKey = candidato.nome.toLowerCase();
-            this.votos[posicao][nomeKey]++;
-        }
+    showSuccessScreen() {
+        this.screen.innerHTML = `
+            <div class="confirmation-screen">
+                <div class="alert success">
+                    ✅ VOTO REGISTRADO COM SUCESSO!
+                </div>
+                <h2>🎉 Obrigado por votar!</h2>
+                <p style="color: #bdc3c7; text-align: center; margin: 20px 0;">
+                    Eleitor: <strong>${this.eleitorAtual}</strong><br>
+                    Seus votos foram registrados com segurança.
+                </p>
+                
+                <div class="controls">
+                    <button class="btn btn-primary" onclick="urna.proximoEleitor()">
+                        Próximo Eleitor
+                    </button>
+                    <button class="btn btn-warning" onclick="urna.showResults()">
+                        Ver Resultados
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    proximoEleitor() {
+        this.eleitorAtual = '';
+        this.resetVotosAtuais();
+        this.showLoginScreen();
     }
 
     showResults() {
+        this.showResultsAdmin();
+    }
+
+    showResultsAdmin() {
+        const totalEleitores = this.eleitoresQueVotaram.size;
         const resultados = this.calcularResultados();
         
         this.screen.innerHTML = `
             <div class="results-screen">
-                <h2>📊 RESULTADO FINAL</h2>
+                <h2>📊 APURAÇÃO DETALHADA</h2>
+                <p style="color: #bdc3c7; text-align: center; margin-bottom: 30px;">
+                    Total de eleitores que votaram: <strong>${totalEleitores}</strong>
+                </p>
                 
                 ${this.renderResultadoPosicao('Representante de Turma', 'representante', resultados.representante)}
                 ${this.renderResultadoPosicao('Monitor', 'monitor', resultados.monitor)}
                 ${this.renderResultadoPosicao('Orador', 'orador', resultados.orador)}
                 
                 <div class="controls">
-                    <button class="btn btn-primary" onclick="urna.novaEleicao()">
+                    <button class="btn btn-primary" onclick="urna.proximoEleitor()">
+                        Continuar Votação
+                    </button>
+                    <button class="btn btn-danger" onclick="urna.novaEleicao()">
                         Nova Eleição
                     </button>
                 </div>
@@ -196,18 +322,21 @@ class UrnaEletronica {
 
     renderResultadoPosicao(titulo, posicao, resultado) {
         const votos = this.votos[posicao];
-        const totalVotos = Object.values(votos).reduce((a, b) => a + b, 0);
+        const votosCandidatos = votos.candidatos;
+        const totalVotos = Object.values(votosCandidatos).reduce((a, b) => a + b, 0) + votos.branco + votos.nulo;
         
         return `
             <div class="results-section">
                 <h3>${titulo}</h3>
-                ${Object.entries(votos).map(([nome, quantidade]) => {
+                
+                <h4 style="color: #3498db; margin: 15px 0;">📋 Candidatos:</h4>
+                ${Object.entries(votosCandidatos).map(([nome, quantidade]) => {
                     const percentage = totalVotos > 0 ? (quantidade / totalVotos * 100) : 0;
                     const isWinner = resultado.vencedor && nome === resultado.vencedor.toLowerCase();
-                    const isTie = resultado.empate;
+                    const isTie = resultado.empate && resultado.vencedores && resultado.vencedores.includes(nome);
                     
                     return `
-                        <div class="result-item ${isWinner && !isTie ? 'winner' : ''} ${isTie && quantidade === Math.max(...Object.values(votos)) ? 'tie' : ''}">
+                        <div class="result-item ${isWinner && !resultado.empate ? 'winner' : ''} ${isTie ? 'tie' : ''}">
                             <span>${nome.charAt(0).toUpperCase() + nome.slice(1)}</span>
                             <span>${quantidade} voto${quantidade !== 1 ? 's' : ''} (${percentage.toFixed(1)}%)</span>
                         </div>
@@ -217,10 +346,21 @@ class UrnaEletronica {
                     `;
                 }).join('')}
                 
+                <h4 style="color: #95a5a6; margin: 15px 0;">📄 Votos Especiais:</h4>
+                <div class="result-item">
+                    <span>Votos em Branco</span>
+                    <span>${votos.branco} voto${votos.branco !== 1 ? 's' : ''} (${totalVotos > 0 ? (votos.branco / totalVotos * 100).toFixed(1) : 0}%)</span>
+                </div>
+                <div class="result-item">
+                    <span>Votos Nulos</span>
+                    <span>${votos.nulo} voto${votos.nulo !== 1 ? 's' : ''} (${totalVotos > 0 ? (votos.nulo / totalVotos * 100).toFixed(1) : 0}%)</span>
+                </div>
+                
                 <div style="text-align: center; margin-top: 15px; font-weight: bold; color: #f39c12;">
                     ${resultado.empate ? 
-                        '🤝 EMPATE!' : 
-                        resultado.vencedor ? `🏆 ELEITO: ${resultado.vencedor.toUpperCase()}` : '⚠️ Sem votos'
+                        `🤝 EMPATE! Candidatos empatados: ${resultado.vencedores.map(v => v.toUpperCase()).join(', ')}` : 
+                        resultado.vencedor ? `🏆 MAIS VOTADO: ${resultado.vencedor.toUpperCase()}` : 
+                        totalVotos === 0 ? '⚠️ Nenhum voto registrado' : '⚠️ Apenas votos especiais'
                     }
                 </div>
             </div>
@@ -231,17 +371,20 @@ class UrnaEletronica {
         const resultados = {};
         
         for (const posicao in this.votos) {
-            const votos = this.votos[posicao];
-            const entries = Object.entries(votos);
-            const maxVotos = Math.max(...Object.values(votos));
-            const vencedores = entries.filter(([nome, quantidade]) => quantidade === maxVotos);
+            const votosCandidatos = this.votos[posicao].candidatos;
+            const entries = Object.entries(votosCandidatos);
+            const maxVotos = Math.max(...Object.values(votosCandidatos));
+            const vencedores = entries.filter(([nome, quantidade]) => quantidade === maxVotos && quantidade > 0);
             
-            if (vencedores.length > 1 || maxVotos === 0) {
-                resultados[posicao] = { empate: true };
-            } else if (vencedores.length > 0) {
+            if (vencedores.length > 1) {
+                resultados[posicao] = { 
+                    empate: true, 
+                    vencedores: vencedores.map(([nome]) => nome) 
+                };
+            } else if (vencedores.length === 1) {
                 resultados[posicao] = { vencedor: vencedores[0][0] };
             } else {
-                resultados[posicao] = { empate: true };
+                resultados[posicao] = { vencedor: null };
             }
         }
         
@@ -258,19 +401,33 @@ class UrnaEletronica {
     }
 
     novaEleicao() {
-        // Reset completo
-        this.quantidadeVotantes = 0;
-        this.votanteAtual = 0;
-        this.votos = {
-            representante: { pedro: 0, joao: 0, rogerio: 0 },
-            monitor: { pedro: 0, gabriel: 0, marcelo: 0 },
-            orador: { matheus: 0, daniel: 0, felipe: 0 }
-        };
-        this.votosAtuais = {};
-        this.posicaoAtual = 'representante';
-        this.indicePosicao = 0;
-        
-        this.showConfigScreen();
+        if (confirm('Tem certeza que deseja iniciar uma nova eleição? Todos os votos atuais serão perdidos.')) {
+            // Reset completo
+            this.eleitoresQueVotaram.clear();
+            this.votos = {
+                representante: { 
+                    candidatos: { pedro: 0, joao: 0, rogerio: 0 },
+                    branco: 0,
+                    nulo: 0
+                },
+                monitor: { 
+                    candidatos: { pedro: 0, gabriel: 0, marcelo: 0 },
+                    branco: 0,
+                    nulo: 0
+                },
+                orador: { 
+                    candidatos: { matheus: 0, daniel: 0, felipe: 0 },
+                    branco: 0,
+                    nulo: 0
+                }
+            };
+            this.votosAtuais = {};
+            this.posicaoAtual = 'representante';
+            this.indicePosicao = 0;
+            this.eleitorAtual = '';
+            
+            this.showLoginScreen();
+        }
     }
 }
 
